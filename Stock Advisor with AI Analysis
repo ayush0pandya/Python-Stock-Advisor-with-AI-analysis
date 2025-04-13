@@ -1,0 +1,130 @@
+import requests
+from openai import OpenAI
+
+# Initializes the OpenAI client using a secure API key
+# This client handles all interactions with the OpenAI API for generating completions
+# Storing the key directly in code is not ideal — it's better to use environment variables or configuration files for security
+# However, using the OpenAI client this way centralizes access and avoids spreading the key across multiple functions
+client = OpenAI(api_key= "YOUR - KEY")
+
+def getStockPrice(symbol):
+    
+    NewsApiKey = "YOUR - KEY"
+    # This is the updates version of this function. Previous: used web scraping to get the data, new: using api to get realtime data
+    url = f"https://api.twelvedata.com/price?symbol={symbol}&apikey={NewsApiKey}"
+
+    response = requests.get(url)
+
+    data = response.json()
+    
+    if 'price' in data:
+        return data["price"]
+    else:
+        raise ValueError("Failed to get data for " + symbol)
+    
+    
+def get_news_headlines(symbol, company_name):
+    # This url haa everytihng in it
+    # Company name that tells api to search of the comapany
+    # sortBy = publishedAt for the current articles
+    # and finally the api key 
+    
+    NewsApiKey = "e474bbc1358b47d083d81ccd70ee9f30"
+    url = f"https://newsapi.org/v2/everything?q=\"{company_name}\"&sortBy=publishedAt&language=en&apiKey={NewsApiKey}"
+
+    
+    response = requests.get(url)
+    
+    # .json() converts JSON response into pu=yhton dictionary
+    # 'articles' is a key in the JSON dictionary that holds source, title, url, publishedAt
+    # [] we use this cause if 'articles' does not exist, then it returns an empty list to prevent crashes
+    articles = response.json().get('articles', [])
+    
+    # We are using a list comprehension to retrive first 5 article titles
+    # 5 because it generally covers the latest market news
+    # Thus, headlines stores a list of 5 current titles
+    headlines = [article['title'] for article in articles[:5]]
+    
+    return headlines
+
+
+def get_recommendation(symbol, price, headlines):
+    
+    # Using an empty string to invoke the .join method to join the headlines list into a string
+    summary = "".join(headlines)
+    
+    # This is the main promt that will be passed into AI
+    # It gives the symbol, price and summary with the promt to answer the main question: Buy, sell, hold
+    prompt = (
+        f"The current price of {symbol} is ${price}.\n"
+        f"Here are recent news headlines about {symbol}:\n{summary}\n\n"
+        "Based on this news and market sentiment, should an investor Buy, Hold, or Sell this stock? "
+        "Respond with one word: Buy, Hold, or Sell. Then give a short reason."
+    )
+    
+    # We are now invoking the ai
+    # model and messages are required arguments when using OpenAI
+    # model is self explanatory 
+    # messages is a list of dictionaries where "role": "user" means US, or human and "content": promt is the promt that we are giving it to the AI to answer
+    # We are using 'user' just to tell AI that hey this this is the promt written by me(human), please read and answer it :)
+    response = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=[{"role": "user", "content": prompt}]
+    )
+    
+    # choices[0] because open ai sometimes gives multiple answers
+    # strip() to remove extra spaces in the end
+    return response.choices[0].message.content.strip()
+    
+def get_names(name):
+    # Promt to give a list of the stock ticker ans the comapnay name in a list format 
+    prompt = (
+        f"What is the stock ticker and official company name for '{name}'? "
+        "Format your response as a Python list like this: ['AAPL', 'Apple Inc.']"
+    )
+    
+    # Calling OpenAI Chat API with the constructed prompt
+    # Calls the OpenAI Chat API using the client instance
+    # .chat specifies we are using the chat-completion endpoint
+    # .completions.create sends the actual request with model and message payload
+    response = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=[{"role": "user", "content": prompt}]
+    )
+    
+    reply = response.choices[0].message.content.strip()
+    
+    # this whole try catch block is an optional varifiaction to check if the returned response is a list with two elements or not
+    try:
+        # eval() takes a string as an input, evaluates and returns the result. 
+        # here we are evaluating the reply list, using eval() makes it a real python list.
+        result = eval(reply)
+        if isinstance(result, list) and len(result) == 2:
+            return result
+        else:
+            raise ValueError("AI did not return a valid list.")
+    except:
+        raise ValueError("Failed to parse AI response as a list.")
+
+
+if __name__ == "__main__":
+    
+    
+    name = input("Enter what stock you want to know more about : (Exit to exit the program)")
+    
+    while(name != 'Exit'):
+        symbol = get_names(name)[0]
+        try:
+            company_name = get_names(name)[1]
+            price = getStockPrice(symbol)
+            headlines = get_news_headlines(symbol, name)
+            print("current price of " + symbol + " is : $" + str(price))
+            print("Lets see what you should do\n")
+            print(get_recommendation(symbol, price, headlines))
+            name = input("Enter what stock you want to know more about : (Exit to exit the program)")
+        except ValueError as e:
+            print(e)
+
+    print("Thank you")
+
+    
